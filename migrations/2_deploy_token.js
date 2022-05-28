@@ -1,5 +1,5 @@
-const AsimovToken = artifacts.require("./AsimovToken.sol");
+const GhostToken = artifacts.require("GhostToken");
 
 module.exports = (deployer) => {
-    deployer.deploy(AsimovToken);
+    deployer.deploy(GhostToken);
 };

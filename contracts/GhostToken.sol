@@ -9,7 +9,10 @@ import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
 contract GhostToken is ERC20, IERC721Receiver {
     address constant GHOST_NFT_ADDRESS = 0x382E1AB2488C1B9b64C0A331Ea31dAF493561EC9;
-    uint256 immutable TOKENS_PER_GHOST;
+    uint256 constant BLOCKS_PER_YEAR = 10512000;
+
+    uint256 immutable MAXIMUM_TOKEN_REWARD;
+    uint256 immutable MINIMUM_TOKEN_REWARD;
 
     // SAVE WHICH GHOSTS BELONG TO WHICH USER
     mapping(uint256 => address) internal _tokenOwners;
@@ -18,17 +21,15 @@ contract GhostToken is ERC20, IERC721Receiver {
     // SAVE ALL CURRENT LOCKED GHOST OF A USER
     mapping(address => uint256[]) internal _lockedGhosts;
 
-    constructor() ERC20("Dev Token", "DEV") {
-        TOKENS_PER_GHOST = 100000 * 10 ** decimals();
+    uint256 _mintingStart;
 
+    constructor() ERC20("Ghost Soul", "GSOUL") {
+        MAXIMUM_TOKEN_REWARD = 100000 * 10 ** decimals();
+        MINIMUM_TOKEN_REWARD = 10000 * 10 ** decimals();
 
-        // TODO: Discuss
-        // _mint(msg.sender, TOKENS_PER_GHOST * 10); // Initial value of 10 locked ghosts for DAO wallet
+        _mintingStart = block.number;
     }
 
-    function getTokensPerGhost() external view returns (uint256) {
-        return TOKENS_PER_GHOST;
-    }
     function getOwnerOfGhost(uint256 tokenId_) external view returns (address) {
         return _tokenOwners[tokenId_];
     }
@@ -37,8 +38,50 @@ contract GhostToken is ERC20, IERC721Receiver {
         return _lockedGhosts[owner_];
     }
 
-    function withdraw(uint256 tokenId_) external {
-        IERC721(GHOST_NFT_ADDRESS).transferFrom(address(this), msg.sender, tokenId_);
+    function getLockDate(uint256 tokenId_) public view returns (uint256) {
+        return _lockedDate[tokenId_];
+    }
+
+    function getMintingStart() public view returns (uint256) {
+        return _mintingStart;
+    }
+
+    function getMintingBlockTime() public view returns (uint256) {
+        return block.number - getMintingStart();
+    }
+
+    function getRewardForYear(uint year_) public view returns (uint256) {
+        if (year_ < 12) {
+            return (13 - year_)  * 1000 * 10 ** decimals();
+        } else {
+            return 2 * 1000 * 10 ** decimals();
+        }
+    }
+
+    function getRewardsDistributedAfterYears(uint year_) public view returns (uint256) {
+        if (year_ == 0) {
+            return 0;
+        }
+        return getRewardsDistributedAfterYears(year_ - 1) + getRewardForYear(year_ - 1);
+    }
+
+    function getAmount(uint blocktime) public view returns (uint256) {
+        uint256 xYear = blocktime / BLOCKS_PER_YEAR;
+        uint256 currentYearBlocktime = blocktime % BLOCKS_PER_YEAR;
+        uint256 rewardForYear = getRewardForYear(xYear);
+        uint256 rewardPerBlocks = (rewardForYear / BLOCKS_PER_YEAR);
+
+        uint256 alreadyDistributedRewards = getRewardsDistributedAfterYears(xYear);
+        uint256 reward = MAXIMUM_TOKEN_REWARD - alreadyDistributedRewards - (rewardPerBlocks * currentYearBlocktime);
+        if (reward > MINIMUM_TOKEN_REWARD) {
+            return reward;
+        } else {
+            return MINIMUM_TOKEN_REWARD;
+        }
+    }
+
+    function determineCurrentTokensPerGhost() public view returns (uint256) {
+        return getAmount(getMintingBlockTime());
     }
 
     function bury(uint256 tokenId_) external {
@@ -49,7 +92,7 @@ contract GhostToken is ERC20, IERC721Receiver {
         _lockedDate[tokenId_] = block.timestamp;
         _lockedGhosts[msg.sender].push(tokenId_);
 
-        _mint(msg.sender, TOKENS_PER_GHOST);
+        _mint(msg.sender, determineCurrentTokensPerGhost());
         IERC721(GHOST_NFT_ADDRESS).safeTransferFrom(msg.sender, address(this), tokenId_);
     }
 
@@ -65,8 +108,9 @@ contract GhostToken is ERC20, IERC721Receiver {
     function _summon(address payer_, address nftOwner_, uint256 tokenId_) internal {
         require(_tokenOwners[tokenId_] == nftOwner_, "This Ghost does not belong the given address");
         require(IERC721(GHOST_NFT_ADDRESS).ownerOf(tokenId_) == address(this), "The Ghost is not locked");
-        require(balanceOf(payer_) >= TOKENS_PER_GHOST, "You do not hold enough tokens");
-        require(allowance(payer_, address(this)) >= TOKENS_PER_GHOST, "Tokens has not been approved");
+        uint256 currentTokensPerGhost = determineCurrentTokensPerGhost();
+        require(balanceOf(payer_) >= currentTokensPerGhost, "You do not hold enough tokens");
+        require(allowance(payer_, address(this)) >= currentTokensPerGhost, "Tokens has not been approved");
 
         bool removed = false;
         for (uint i = 0; i < _lockedGhosts[nftOwner_].length; i++) {
@@ -83,9 +127,9 @@ contract GhostToken is ERC20, IERC721Receiver {
 
         _tokenOwners[tokenId_] = address(0);
         _lockedDate[tokenId_] = 0;
-        _spendAllowance(payer_, address(this), TOKENS_PER_GHOST);
-        _burn(payer_, TOKENS_PER_GHOST);
-        IERC721(GHOST_NFT_ADDRESS).transferFrom(address(this), nftOwner_, tokenId_);
+        _spendAllowance(payer_, address(this), currentTokensPerGhost);
+        _burn(payer_, currentTokensPerGhost);
+        IERC721(GHOST_NFT_ADDRESS).safeTransferFrom(address(this), nftOwner_, tokenId_);
     }
 
     function burn(uint256 amount) public virtual {
