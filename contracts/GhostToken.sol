@@ -8,7 +8,7 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
 contract GhostToken is ERC20, IERC721Receiver {
-    address constant GHOST_NFT_ADDRESS = 0x382E1AB2488C1B9b64C0A331Ea31dAF493561EC9;
+    address constant GHOST_NFT_ADDRESS = 0xef68A81dccF28EFEEc42043dCD6bbD22701Af4d0;
     uint256 constant BLOCKS_PER_YEAR = 10512000;
 
     uint256 immutable MAXIMUM_TOKEN_REWARD;
